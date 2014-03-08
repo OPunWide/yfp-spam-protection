@@ -1,7 +1,7 @@
 <?php
 /*
 Plugin Name: yfp-spam-protection
-Version: 1.2
+Version: 1.2.1
 Plugin URI: http://SplendidSpider.com
 Description: A plug-in to stop spam that is coming from the comment form.
 Author: Paul Blakelock, but see below
@@ -56,8 +56,8 @@ class YFP_Spam_Protection
     protected $cur_val_rating;
 
     // Text for the forms and error messages.
-    protected $tplt_input_pre = '<p class="%s"><label for="%s">%s</label><span class="required">*</span>';
-    protected $tplt_input_tag = '<input id="%s" name="%s" type="text" size="30" tabindex="%d" />';
+    protected $tplt_input_pre = '<p class="%s"><label for="%s">%s <span class="required">*</span></label>';
+    protected $tplt_input_tag = '<input id="%s" name="%s" type="text" size="30" />';
     protected $tplt_rating_stars = '';
     protected $tplt_err_pre = 'Error: You did not %s.';
     protected $tplt_err_post = '%s, it is part of the spam filter. Hit the BACK button of your Web browser and resubmit your comment.';
@@ -147,28 +147,28 @@ class YFP_Spam_Protection
         switch ( $fieldtype ) {
 
             case self::TYPE_PHONE:
-                $htm .= sprintf( $this->tplt_err_pre, 'enter your phone number' );
-                $htm .= sprintf( $this->tplt_err_post, 'Enter "<b>' .
+                $htm .= __(sprintf( $this->tplt_err_pre, 'enter your phone number' ));
+                $htm .= __(sprintf( $this->tplt_err_post, 'Enter "<b>' .
                         $this->get_expected_value(self::TYPE_PHONE) .
-                        '</b>" without the quotes' );
+                        '</b>" without the quotes' ));
                 break;
 
             case self::TYPE_TITLE:
-                $htm .= sprintf( $this->tplt_err_pre, 'enter a Comment Title' );
-                $htm .= sprintf( $this->tplt_err_post, 'Enter "<b>' .
+                $htm .= __(sprintf( $this->tplt_err_pre, 'enter a Comment Title' ));
+                $htm .= __(sprintf( $this->tplt_err_post, 'Enter "<b>' .
                         $this->get_expected_value(self::TYPE_TITLE) .
-                        '</b>" without the quotes' );
+                        '</b>" without the quotes' ));
                 break;
 
             case self::TYPE_RATING:
-                $htm .= sprintf( $this->tplt_err_pre, 'enter a rating' );
-                $htm .= sprintf( $this->tplt_err_post, 'It must be rated as a <b>' .
+                $htm .= __(sprintf( $this->tplt_err_pre, 'enter a rating' ));
+                $htm .= __(sprintf( $this->tplt_err_post, 'It must be rated as a <b>' .
                         $this->get_expected_value(self::TYPE_RATING) .
-                        '</b>' );
+                        '</b>' ));
                 break;
         }
 
-        return __( $htm );
+        return $htm;
     }
 
     /**
@@ -185,24 +185,25 @@ class YFP_Spam_Protection
         switch ( $fieldtype ) {
 
             case self::TYPE_PHONE:
-                $htm .= sprintf( $this->tplt_input_pre, 'comment-form-phone', 'phone',
-                        __( 'Phone (must use: ' . $this->cur_val_phone . ')' ) );
-                $htm .= sprintf( $this->tplt_input_tag, 'phone', 'phone', 4 );
+                $tlate = __(sprintf( 'Phone (must use number: %s)', $this->cur_val_phone));
+                $htm .= sprintf( $this->tplt_input_pre, 'comment-form-phone', 'phone', $tlate ) . "\n";
+                $htm .= sprintf( $this->tplt_input_tag, 'phone', 'phone' );
                 $htm .= '</p>';
                 break;
 
             case self::TYPE_TITLE:
-                $htm .= sprintf( $this->tplt_input_pre, 'comment-form-title', 'title',
-                        __( 'Comment Title (must use: ' . $this->cur_val_title . ')' ) );
-                $htm .= sprintf( $this->tplt_input_tag, 'title', 'title', 5 );
+                $tlate = __(sprintf( 'Comment Title (must use text: %s)', $this->cur_val_title));
+                $htm .= sprintf( $this->tplt_input_pre, 'comment-form-title', 'title', $tlate ) . "\n";
+                $htm .= sprintf( $this->tplt_input_tag, 'title', 'title' );
                 $htm .= '</p>';
                 break;
 
             case self::TYPE_RATING:
-                $htm .= sprintf( $this->tplt_input_pre, 'comment-form-rating', 'rating',
-                        __( 'Rating (must select: ' . $this->cur_val_rating . ')' ) );
+                $tlate = __(sprintf( 'Rating (must select: %s)', $this->cur_val_rating));
+                $htm .= sprintf( $this->tplt_input_pre, 'comment-form-rating', 'rating', $tlate);
                 $htm .= "<br />\n";
-                $htm .= '<span class="commentratingbox">' . "\n" . $this->tplt_rating_stars . '</span></p>';
+                $htm .= '<span class="commentratingbox">' . "\n" . $this->tplt_rating_stars . '</span>';
+                $htm .= '</p>';
                 break;
         }
 
@@ -256,11 +257,10 @@ function verify_comment_meta_data( $commentdata ) {
 
 
 function debug_options_arr($dataArr) {
-        ob_start();
-        var_dump($dataArr);
-        $data = ob_get_clean();
-        return htmlspecialchars($data);
-
+    ob_start();
+    var_dump($dataArr);
+    $data = ob_get_clean();
+    return htmlspecialchars($data);
 }
 
 
@@ -426,12 +426,12 @@ class YFP_Spam_Settings_Page
                 // Only update the message if the value has changed.
                 if ( !array_key_exists($key_rating, $this->options) ||
                         $this->options[$key_rating] !== $new_input[$key_rating] ) {
-                    $message .= 'Rating field updated. ';
+                    $message .= __('Rating field updated. ');
                 }
             }
             else {
                 $type = 'error';
-                $message .= 'Rating must be a number from 1 to 5. ';
+                $message .= __('Rating must be a number from 1 to 5. ');
                 if ( array_key_exists($key_rating, $this->options) ) {
                     // Keep the current setting.
                     $new_input[$key_rating] = $this->options[$key_rating];
@@ -451,12 +451,12 @@ class YFP_Spam_Settings_Page
                 // Only update the message if the value has changed.
                 if ( !array_key_exists($key_title, $this->options) ||
                         $this->options[$key_title] !== $new_input[$key_title] ) {
-                    $message .= 'Title field updated. ';
+                    $message .= __('Title field updated. ');
                 }
             }
             else {
                 $type = 'error';
-                $message .= 'Title cannot be empty or contain html, and must be 20 or fewer characters. ';
+                $message .= __('Title cannot be empty or contain html, and must be 20 or fewer characters. ');
                 if ( array_key_exists($key_title, $this->options) ) {
                     // Keep the current setting.
                     $new_input[$key_title] = $this->options[$key_title];
@@ -476,12 +476,12 @@ class YFP_Spam_Settings_Page
                 // Only update the message if the value has changed.
                 if ( !array_key_exists($key_phone, $this->options) ||
                         $this->options[$key_phone] !== $new_input[$key_phone] ) {
-                    $message .= 'Phone field updated. ';
+                    $message .= __('Phone field updated. ');
                 }
             }
             else {
                 $type = 'error';
-                $message .= 'Phone cannot be empty or contain html, and must be 15 characters or less. ';
+                $message .= __('Phone cannot be empty or contain html, and must be 15 characters or less. ');
                 if ( array_key_exists($key_phone, $this->options) ) {
                     // Keep the current setting.
                     $new_input[$key_phone] = $this->options[$key_phone];
@@ -511,7 +511,7 @@ class YFP_Spam_Settings_Page
      */
     public function print_section_info() {
 
-        print 'All setting for the plugin are on this page. Enter your settings below:';
+        _e('All setting for the plugin are on this page. Enter your settings below:');
         //print debug_options_arr($this->options);
     }
 
@@ -522,7 +522,7 @@ class YFP_Spam_Settings_Page
 
         $key = YFP_Spam_Protection::WPO_KEY_RATING;
         printf( $this->tplt_input_element,
-            'updated rating',
+            __('updated rating'),
             $this->wp_options_key_name . '[' . $key . ']',
             isset( $this->options[$key] ) ? esc_attr( $this->options[$key]) :
                 YFP_Spam_Protection::DEFAULT_RATING
@@ -536,7 +536,7 @@ class YFP_Spam_Settings_Page
 
         $key = YFP_Spam_Protection::WPO_KEY_TITLE;
         printf( $this->tplt_input_element,
-            'updated title',
+            __('updated title'),
             $this->wp_options_key_name . '[' . $key . ']',
             isset( $this->options[$key] ) ? esc_attr( $this->options[$key]) :
                 YFP_Spam_Protection::DEFAULT_TITLE
@@ -549,7 +549,7 @@ class YFP_Spam_Settings_Page
 
         $key = YFP_Spam_Protection::WPO_KEY_PHONE;
         printf( $this->tplt_input_element,
-            'updated phone',
+            __('updated phone'),
             $this->wp_options_key_name . '[' . $key . ']',
             isset( $this->options[$key] ) ? esc_attr( $this->options[$key]) :
                 YFP_Spam_Protection::DEFAULT_PHONE
