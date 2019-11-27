@@ -1,7 +1,7 @@
 <?php
 /*
 Plugin Name: yfp-spam-protection
-Version: 1.2.1
+Version: 1.2.2
 Plugin URI: http://SplendidSpider.com
 Description: A plug-in to stop spam that is coming from the comment form.
 Author: Paul Blakelock, but see below
