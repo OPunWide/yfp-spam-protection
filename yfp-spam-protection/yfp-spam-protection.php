@@ -323,7 +323,6 @@ class YFP_Spam_Settings_Page
         // Set class property
         ?>
         <div class="wrap">
-            <?php screen_icon(); ?>
             <h2>YFP Spam Protection settings</h2>
             <p>The defaults will work for most people, but any of the values can be
             changed to different strings. The ratings value must be between 1 and 5.</p>
