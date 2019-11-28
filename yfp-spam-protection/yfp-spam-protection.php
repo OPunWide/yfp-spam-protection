@@ -53,16 +53,16 @@ class YFP_Spam_Protection
     const WPO_KEY_TITLE = 'ti';
 
     // The current value of the option.
-    protected $cur_val_phone;
-    protected $cur_val_title;
-    protected $cur_val_rating;
+    private $cur_val_phone;
+    private $cur_val_title;
+    private $cur_val_rating;
 
     // Text for the forms and error messages.
     const TPL_INPUT_PRE = '<p class="%s"><label for="%s">%s <span class="required">*</span></label>';
     const TPL_INPUT_TAG = '<input id="%s" name="%s" type="text" size="30" />';
-    protected $tplt_rating_stars = '';
-    protected $tplt_err_pre = 'Error: You did not %s.';
-    protected $tplt_err_post = '%s, it is part of the spam filter. Hit the BACK button on your browser and resubmit your comment.';
+    private $tplt_rating_stars = '';
+    private $tplt_err_pre = 'Error: You did not %s.';
+    private $tplt_err_post = '%s, it is part of the spam filter. Hit the BACK button on your browser and resubmit your comment.';
 
     /**
      * If $key exists in $arr and it is a non-empty string return it, else return $default.
@@ -72,7 +72,7 @@ class YFP_Spam_Protection
      * @param string $default
      * @return string
      */
-    protected function array_val_or_default($arr, $key, $default) {
+    private function array_val_or_default($arr, $key, $default) {
 
         $ret = $default;
         if ( is_array($arr) && array_key_exists($key, $arr) ) {
@@ -86,26 +86,16 @@ class YFP_Spam_Protection
         return $ret;
     }
 
-
     /**
-     * Set the initial values for things that cannot be constants.
+     * Get the expected value for the field for part of a message, adding the
+     * expected HTML tags.
      *
+     * @param mixed $fieldtype - one of the class' TYPE_ constants
+     * @return string
      */
-    public function __construct() {
+    private function get_expected_value_in_bold( $fieldtype ) {
 
-        // Get options from the WP database.
-        $optionsData = get_option(self::WP_OPTION_KEY);
-        $this->cur_val_phone = $this->array_val_or_default($optionsData, self::WPO_KEY_PHONE, self::DEFAULT_PHONE);
-        $this->cur_val_title = $this->array_val_or_default($optionsData, self::WPO_KEY_TITLE, self::DEFAULT_TITLE);
-        $this->cur_val_rating = $this->array_val_or_default($optionsData, self::WPO_KEY_RATING, self::DEFAULT_RATING);
-
-        // Set up the rating text.
-        $tpl_rating_input = '<span class="commentrating"><input type="radio" name="rating" value="%s" />%s</span>';
-        $parts = [];
-        for( $i=1; $i <= 5; $i++ ) {
-            $parts[] = sprintf($tpl_rating_input, $i, $i);
-        }
-        $this->tplt_rating_stars = implode("\n", $parts) . "\n";
+        return '<b>' . $this->get_expected_value( $fieldtype ) . '</b>';
     }
 
     /**
@@ -114,7 +104,7 @@ class YFP_Spam_Protection
      * @param mixed $fieldtype - one of the class' TYPE_ constants
      * @return string
      */
-    public function get_expected_value( $fieldtype ) {
+    private function get_expected_value( $fieldtype ) {
 
         $text = 'invalid';
         switch ( $fieldtype ) {
@@ -135,17 +125,44 @@ class YFP_Spam_Protection
 
         return $text;
     }
-    
+
+
     /**
-     * Get the expected value for the field for part of a message, adding the
-     * expected HTML tags.
+     * Set the initial values for things that cannot be constants.
      *
-     * @param mixed $fieldtype - one of the class' TYPE_ constants
-     * @return string
      */
-    private function get_expected_value_in_bold( $fieldtype ) {
-        
-        return '<b>' . $this->get_expected_value( $fieldtype ) . '</b>';
+    public function __construct() {
+
+        // Get options from the WP database.
+        $optionsData = get_option(self::WP_OPTION_KEY);
+        $this->cur_val_phone = $this->array_val_or_default(
+                $optionsData, self::WPO_KEY_PHONE, self::DEFAULT_PHONE);
+        $this->cur_val_title = $this->array_val_or_default(
+                $optionsData, self::WPO_KEY_TITLE, self::DEFAULT_TITLE);
+        $this->cur_val_rating = $this->array_val_or_default(
+                $optionsData, self::WPO_KEY_RATING, self::DEFAULT_RATING);
+
+        // Set up the rating text, a sequence of radio button inputs.
+        $tpl_rating_input = '<span class="commentrating"><input type="radio" name="rating" value="%s" />%s</span>';
+        $parts = [];
+        for( $i=1; $i <= 5; $i++ ) {
+            $parts[] = sprintf($tpl_rating_input, $i, $i);
+        }
+        $this->tplt_rating_stars = implode("\n", $parts) . "\n";
+    }
+
+    /**
+     * Verify that the expected value was entered into the field. Uppercase
+     * comparison is done because the label that gives the "correct" answer
+     * may have been transformed to upper. That means that there would be no
+     * way to indicate the correct answer.
+     *
+     * @param string $fieldtype
+     * @param string $val
+     * @return type
+     */
+    public function is_expected_value( $fieldtype, $val ) {
+        return strtoupper($this->get_expected_value( $fieldtype )) === strtoupper($val);
     }
 
     /**
@@ -237,8 +254,8 @@ function fyp_spampro_add_plugin_page_settings($links) {
 
 // Add custom fields to the default comment form
 // Default comment form elements are hidden when user is logged in
-add_filter('comment_form_default_fields', 'custom_fields');
-function custom_fields($fields) {
+add_filter('comment_form_default_fields', 'spam_protect_custom_fields');
+function spam_protect_custom_fields($fields) {
 
     $yfpsp = new YFP_Spam_Protection();
     // Add 3 fields, all are required.
@@ -249,27 +266,40 @@ function custom_fields($fields) {
 }
 
 
-// Add the filter to check if the comment meta data has been filled or not
+// Add the filter to check if the comment verification data has been filled.
 add_filter( 'preprocess_comment', 'verify_comment_meta_data' );
+
+/**
+ * Pass the comment data through the filter unchanged if all of the fields were
+ * properly set. No checking is done if the user is logged in because a logged in
+ * user is trusted.
+ *
+ * @param string $commentdata
+ * @return string;
+ */
 function verify_comment_meta_data( $commentdata ) {
 
-    $yfpsp = new YFP_Spam_Protection();
-
+    // The data is only checked if the user is not logged in.
     if ( !is_user_logged_in() ) {
 
-        if ( ! isset( $_POST['phone'] ) || $_POST['phone'] !== $yfpsp->get_expected_value(YFP_Spam_Protection::TYPE_PHONE) ) {
+        // The object is needed to get the expected values and failure messages.
+        $yfpsp = new YFP_Spam_Protection();
 
-            wp_die( $yfpsp->get_verify_failure_message(YFP_Spam_Protection::TYPE_PHONE) );
-        }
+        // The $_POST key and the YFP_Spam_Protection class key constant.
+        $pairs = [
+            'phone' => YFP_Spam_Protection::TYPE_PHONE,
+            'rating' => YFP_Spam_Protection::TYPE_RATING,
+            'title' => YFP_Spam_Protection::TYPE_TITLE,
+        ];
 
-        if ( ! isset( $_POST['rating'] ) || $_POST['rating'] !== $yfpsp->get_expected_value(YFP_Spam_Protection::TYPE_RATING) ) {
+        // Each item must be in the post and have the expected value.
+        foreach($pairs as $key => $objKey) {
 
-            wp_die( $yfpsp->get_verify_failure_message(YFP_Spam_Protection::TYPE_RATING) );
-        }
+            if ( !isset( $_POST[$key] ) || !$yfpsp->is_expected_value($objKey, $_POST[$key]) ) {
 
-        if ( ! isset( $_POST['title'] ) || $_POST['title'] !== $yfpsp->get_expected_value(YFP_Spam_Protection::TYPE_TITLE)) {
-
-            wp_die( $yfpsp->get_verify_failure_message(YFP_Spam_Protection::TYPE_TITLE) );
+                // The user must use the browser's Back button to recover.
+                wp_die( $yfpsp->get_verify_failure_message($objKey) );
+            }
         }
     }
 
@@ -306,6 +336,19 @@ class YFP_Spam_Settings_Page
     // The name of the key to use for all of this plugin's options.
     protected $wp_options_key_name = null;
     protected $yfp_settings_group = null;
+
+    /**
+     * Typing shortcut to turn a key from the options into text that can be used
+     * as the value in a name parameter of an input element.
+     *
+     * @param string $key
+     * @return string
+     */
+    private function to_input_file_name($key) {
+
+        return $this->wp_options_key_name . '[' . $key . ']';
+    }
+
 
     /**
      * Start up: add the settings page and register settings values.
@@ -548,7 +591,7 @@ class YFP_Spam_Settings_Page
         $key = YFP_Spam_Protection::WPO_KEY_RATING;
         printf( self::TPLT_INPUT_ELEMENT,
             __('updated rating'),
-            $this->wp_options_key_name . '[' . $key . ']',
+            $this->to_input_file_name($key),
             isset( $this->options[$key] ) ? esc_attr( $this->options[$key]) :
                 YFP_Spam_Protection::DEFAULT_RATING
         );
@@ -562,11 +605,12 @@ class YFP_Spam_Settings_Page
         $key = YFP_Spam_Protection::WPO_KEY_TITLE;
         printf( self::TPLT_INPUT_ELEMENT,
             __('updated title'),
-            $this->wp_options_key_name . '[' . $key . ']',
+            $this->to_input_file_name($key),
             isset( $this->options[$key] ) ? esc_attr( $this->options[$key]) :
                 YFP_Spam_Protection::DEFAULT_TITLE
         );
     }
+
     /**
      * Get the settings option array and print one of its values
      */
@@ -575,7 +619,7 @@ class YFP_Spam_Settings_Page
         $key = YFP_Spam_Protection::WPO_KEY_PHONE;
         printf( self::TPLT_INPUT_ELEMENT,
             __('updated phone'),
-            $this->wp_options_key_name . '[' . $key . ']',
+            $this->to_input_file_name($key),
             isset( $this->options[$key] ) ? esc_attr( $this->options[$key]) :
                 YFP_Spam_Protection::DEFAULT_PHONE
         );
