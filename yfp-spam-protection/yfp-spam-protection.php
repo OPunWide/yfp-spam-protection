@@ -1,38 +1,40 @@
 <?php
 /*
-Plugin Name: yfp-spam-protection
-Version: 1.2.2
-Plugin URI: http://SplendidSpider.com
-Description: A plug-in to stop spam that is coming from the comment form.
-Author: Paul Blakelock, but see below
+Plugin Name: YFP Spam Protection
+Version: 1.3.0
+Plugin URI: https://github.com/OPunWide/yfp-spam-protection
+Description: A plug-in to stop robot-generated spam from posting on a comment.
+Author: Paul Blakelock
 Author URI: http://SplendidSpider.com
+Requires PHP: 5.4
 */
 
 /**
-* This uses just two filter functions on the standard comment form.
-* Use the filter comment_form_default_fields to add three fields to
-* the form if the user is not logged in.
-*
-* Use the filter to verify that those fields were filled in properly,
-* again only if the user is not logged in.
-*
-* The form data that the user enters is not saved and does not modify the
-* database. It is just a filter that requires the fields to be filled in.
-*
-* All new fields are required, and have specific input values. Easy for
-* a human, difficult for a bot.
-*
-* All of the other plugin code is to allow the form to be modifed by an admin.
-* It allows the standard answers to be changed, in case the spammers
-* ever decide that this is a plugin worth trying to bypass.
-*
-* When the user is logged in, custom_fields are hidden and are not required.
-*
-*/
+ * This uses just two filter functions on the standard comment form.
+ * Use the filter comment_form_default_fields to add three fields to
+ * the form if the user is not logged in.
+ *
+ * Use the filter to verify that those fields were filled in properly,
+ * again only if the user is not logged in.
+ *
+ * The form data that the user enters is not saved and does not modify the
+ * database. It is just a filter that requires the fields to be filled in.
+ *
+ * All new fields are required, and have specific input values. Easy for
+ * a human, difficult for a bot.
+ *
+ * All of the other plugin code is to allow the form to be modified by an admin.
+ * It allows the standard answers to be changed, in case the spammers
+ * ever decide that this is a plugin worth trying to bypass.
+ *
+ * When the user is logged in, custom_fields are hidden and are not required.
+ *
+ * The plugin name in the header was previously "yfp-spam-protection".
+ */
 
 /**
-* This class is used for all of the interaction with the comment form's filters.
-*/
+ * This class is used for all of the interaction with the comment form's filters.
+ */
 class YFP_Spam_Protection
 {
     const DEFAULT_PHONE = '555-5555';
@@ -56,20 +58,20 @@ class YFP_Spam_Protection
     protected $cur_val_rating;
 
     // Text for the forms and error messages.
-    protected $tplt_input_pre = '<p class="%s"><label for="%s">%s <span class="required">*</span></label>';
-    protected $tplt_input_tag = '<input id="%s" name="%s" type="text" size="30" />';
+    const TPL_INPUT_PRE = '<p class="%s"><label for="%s">%s <span class="required">*</span></label>';
+    const TPL_INPUT_TAG = '<input id="%s" name="%s" type="text" size="30" />';
     protected $tplt_rating_stars = '';
     protected $tplt_err_pre = 'Error: You did not %s.';
-    protected $tplt_err_post = '%s, it is part of the spam filter. Hit the BACK button of your Web browser and resubmit your comment.';
+    protected $tplt_err_post = '%s, it is part of the spam filter. Hit the BACK button on your browser and resubmit your comment.';
 
     /**
-    * If $key exists in $arr and it is a non-empty string return it, else return $default.
-    *
-    * @param array $arr
-    * @param string $key
-    * @param string $default
-    * @return string
-    */
+     * If $key exists in $arr and it is a non-empty string return it, else return $default.
+     *
+     * @param array $arr
+     * @param string $key
+     * @param string $default
+     * @return string
+     */
     protected function array_val_or_default($arr, $key, $default) {
 
         $ret = $default;
@@ -86,13 +88,10 @@ class YFP_Spam_Protection
 
 
     /**
-    * Set the initial values for things that cannot be constants.
-    *
-    */
+     * Set the initial values for things that cannot be constants.
+     *
+     */
     public function __construct() {
-
-        // Do a reset until the admin panel is done.
-        //$ok = update_option(self::WP_OPTION_KEY, array());
 
         // Get options from the WP database.
         $optionsData = get_option(self::WP_OPTION_KEY);
@@ -101,18 +100,20 @@ class YFP_Spam_Protection
         $this->cur_val_rating = $this->array_val_or_default($optionsData, self::WPO_KEY_RATING, self::DEFAULT_RATING);
 
         // Set up the rating text.
-        $this->tplt_rating_stars = '';
+        $tpl_rating_input = '<span class="commentrating"><input type="radio" name="rating" value="%s" />%s</span>';
+        $parts = [];
         for( $i=1; $i <= 5; $i++ ) {
-            $this->tplt_rating_stars .= '<span class="commentrating"><input type="radio" name="rating" value="'. $i .'" />'. $i .'</span>' . "\n";
+            $parts[] = sprintf($tpl_rating_input, $i, $i);
         }
+        $this->tplt_rating_stars = implode("\n", $parts) . "\n";
     }
 
     /**
-    * Get the expected value for the field to verify.
-    *
-    * @param mixed $fieldtype - one of the class' TYPE_ constants
-    * @return string
-    */
+     * Get the expected value for the field to verify.
+     *
+     * @param mixed $fieldtype - one of the class' TYPE_ constants
+     * @return string
+     */
     public function get_expected_value( $fieldtype ) {
 
         $text = 'invalid';
@@ -134,13 +135,25 @@ class YFP_Spam_Protection
 
         return $text;
     }
+    
+    /**
+     * Get the expected value for the field for part of a message, adding the
+     * expected HTML tags.
+     *
+     * @param mixed $fieldtype - one of the class' TYPE_ constants
+     * @return string
+     */
+    private function get_expected_value_in_bold( $fieldtype ) {
+        
+        return '<b>' . $this->get_expected_value( $fieldtype ) . '</b>';
+    }
 
     /**
-    * Get the expected value for the field to verify.
-    *
-    * @param mixed $fieldtype - one of the class' TYPE_ constants
-    * @return string
-    */
+     * Get the expected value for the field to verify.
+     *
+     * @param mixed $fieldtype - one of the class' TYPE_ constants
+     * @return string
+     */
     public function get_verify_failure_message( $fieldtype ) {
 
         $htm = '';
@@ -148,23 +161,22 @@ class YFP_Spam_Protection
 
             case self::TYPE_PHONE:
                 $htm .= __(sprintf( $this->tplt_err_pre, 'enter your phone number' ));
-                $htm .= __(sprintf( $this->tplt_err_post, 'Enter "<b>' .
-                        $this->get_expected_value(self::TYPE_PHONE) .
-                        '</b>" without the quotes' ));
+                $htm .= __(sprintf( $this->tplt_err_post, ' Enter "' .
+                        $this->get_expected_value_in_bold(self::TYPE_PHONE) .
+                        '" without the quotes' ));
                 break;
 
             case self::TYPE_TITLE:
                 $htm .= __(sprintf( $this->tplt_err_pre, 'enter a Comment Title' ));
-                $htm .= __(sprintf( $this->tplt_err_post, 'Enter "<b>' .
-                        $this->get_expected_value(self::TYPE_TITLE) .
-                        '</b>" without the quotes' ));
+                $htm .= __(sprintf( $this->tplt_err_post, ' Enter "' .
+                        $this->get_expected_value_in_bold(self::TYPE_TITLE) .
+                        '" without the quotes' ));
                 break;
 
             case self::TYPE_RATING:
                 $htm .= __(sprintf( $this->tplt_err_pre, 'enter a rating' ));
-                $htm .= __(sprintf( $this->tplt_err_post, 'It must be rated as a <b>' .
-                        $this->get_expected_value(self::TYPE_RATING) .
-                        '</b>' ));
+                $htm .= __(sprintf( $this->tplt_err_post, ' It must be rated as a ' .
+                        $this->get_expected_value_in_bold(self::TYPE_RATING) ));
                 break;
         }
 
@@ -172,46 +184,56 @@ class YFP_Spam_Protection
     }
 
     /**
-    * Gets the contents for a field on the form.
-    * Ignore bad field type values. Should an error be thrown instead?
-    *
-    * @param mixed $fieldtype - one of the class' TYPE_ constants
-    * @return string
-    */
+     * Gets the contents for a field on the form.
+     * Ignore bad field type values. Should an error be thrown instead?
+     *
+     * @param mixed $fieldtype - one of the class' TYPE_ constants
+     * @return string
+     */
     public function get_field_html( $fieldtype ) {
 
-        $htm = '';
+        $parts = [];
 
         switch ( $fieldtype ) {
 
             case self::TYPE_PHONE:
                 $tlate = __(sprintf( 'Phone (must use number: %s)', $this->cur_val_phone));
-                $htm .= sprintf( $this->tplt_input_pre, 'comment-form-phone', 'phone', $tlate ) . "\n";
-                $htm .= sprintf( $this->tplt_input_tag, 'phone', 'phone' );
-                $htm .= '</p>';
+                $parts[] = sprintf( self::TPL_INPUT_PRE, 'comment-form-phone', 'phone', $tlate ) . "\n";
+                $parts[] = sprintf( self::TPL_INPUT_TAG, 'phone', 'phone' );
+                $parts[] = '</p>';
                 break;
 
             case self::TYPE_TITLE:
                 $tlate = __(sprintf( 'Comment Title (must use text: %s)', $this->cur_val_title));
-                $htm .= sprintf( $this->tplt_input_pre, 'comment-form-title', 'title', $tlate ) . "\n";
-                $htm .= sprintf( $this->tplt_input_tag, 'title', 'title' );
-                $htm .= '</p>';
+                $parts[] = sprintf( self::TPL_INPUT_PRE, 'comment-form-title', 'title', $tlate ) . "\n";
+                $parts[] = sprintf( self::TPL_INPUT_TAG, 'title', 'title' );
+                $parts[] = '</p>';
                 break;
 
             case self::TYPE_RATING:
                 $tlate = __(sprintf( 'Rating (must select: %s)', $this->cur_val_rating));
-                $htm .= sprintf( $this->tplt_input_pre, 'comment-form-rating', 'rating', $tlate);
-                $htm .= "<br />\n";
-                $htm .= '<span class="commentratingbox">' . "\n" . $this->tplt_rating_stars . '</span>';
-                $htm .= '</p>';
+                $parts[] = sprintf( self::TPL_INPUT_PRE, 'comment-form-rating', 'rating', $tlate);
+                $parts[] = "<br />\n";
+                $parts[] = '<span class="commentratingbox">' . "\n" . $this->tplt_rating_stars . '</span>';
+                $parts[] = '</p>';
                 break;
         }
 
-        return $htm;
+        return implode('', $parts) . "\n";
     }
 }
 
 
+// Add a Settings link to the Plugins page in admin.
+add_filter('plugin_action_links_' . plugin_basename(__FILE__), 'fyp_spampro_add_plugin_page_settings');
+function fyp_spampro_add_plugin_page_settings($links) {
+    // Add to settings screen
+    $url = 'options-general.php?page=' . YFP_Spam_Settings_Page::SLUG_MENU_ADMIN;
+	$settings_link = '<a href="' . admin_url($url) . '">' . __('Settings') . '</a>';
+    // Put the settings link before the others.
+    array_unshift( $links, $settings_link );
+	return $links;
+}
 
 // Add custom fields to the default comment form
 // Default comment form elements are hidden when user is logged in
@@ -266,56 +288,60 @@ function debug_options_arr($dataArr) {
 
 
 /**
-* Taken mostly from the WP sample page, so I'm sure it could be improved.
-*/
+ * Taken mostly from the WP sample page, so I'm sure it could be improved.
+ */
 class YFP_Spam_Settings_Page
 {
     /**
      * Holds the values to be used in the fields callbacks
     */
+    const TPLT_INPUT_ELEMENT = '<input type="text" id="%s" name="%s" value="%s" />';
+    // This plugin's Options page slug - part of the admin url.
+    const SLUG_MENU_ADMIN = 'yfp-spam-settings-admin';
+    // There is only one section, so any ID will do.
+    const SECTION_ID_1 = 'yfp_only_section_id';
+
     // The object that is saved and retrieved from the options_ functions.
     protected $options;
     // The name of the key to use for all of this plugin's options.
-    protected $wp_options_key_name = YFP_Spam_Protection::WP_OPTION_KEY;
-    protected $tplt_input_element = '<input type="text" id="%s" name="%s" value="%s" />';
+    protected $wp_options_key_name = null;
     protected $yfp_settings_group = null;
 
     /**
-     * Start up
+     * Start up: add the settings page and register settings values.
      */
     public function __construct() {
 
-        // the option name as used in the get_option() call.
+        // The option name as used in the get_option() call.
         $this->wp_options_key_name = YFP_Spam_Protection::WP_OPTION_KEY;
+        $this->yfp_settings_group = $this->wp_options_key_name;
         // Get and save the current options, but why?
         $this->options = get_option( $this->wp_options_key_name );
-        $this->yfp_settings_group = $this->wp_options_key_name;
 
-        add_action( 'admin_menu', array( $this, 'add_plugin_page' ) );
-        add_action( 'admin_init', array( $this, 'yfp_options_init' ) );
+        add_action( 'admin_menu', [ $this, 'add_plugin_page' ] );
+        add_action( 'admin_init', [ $this, 'yfp_options_init' ] );
     }
 
     /**
-     * Add the options page to the Settings menu.
+     * Add the plugin's options page to the Settings section in the admin area.
      */
     public function add_plugin_page() {
 
-        // This page will be under "Settings"  in the admin area.
         // This function is a simple wrapper for a call to add_submenu_page().
         add_options_page(
-            'Settings Admin', // Title for the browser's title tag.
+            'YFP Spam Protection Settings', // Title for the browser's title tag.
             'YFP Spam Protection', // Menu text, show under Settings.
             'manage_options', // Which users can use this.
-            'yfp-spam-settings-admin', // Menu slug
-            array( $this, 'create_admin_page' )
+            self::SLUG_MENU_ADMIN, // Menu slug
+            [ $this, 'admin_page_html' ] // Callback that makes the HTML for the page.
         );
     }
 
 
     /**
-     * Options page callback, this creates the page content.
+     * Options page callback, this creates the Settings page content.
      */
-    public function create_admin_page() {
+    public function admin_page_html() {
 
         // The key used matches the Option name in register_settings.
         $this->options = get_option( $this->wp_options_key_name );
@@ -324,8 +350,9 @@ class YFP_Spam_Settings_Page
         ?>
         <div class="wrap">
             <h2>YFP Spam Protection settings</h2>
-            <p>The defaults will work for most people, but any of the values can be
-            changed to different strings. The ratings value must be between 1 and 5.</p>
+            <p>The defaults will work for most people. Any of the values can be
+            changed to different strings. That will then be the required "answer".
+            The Ratings value must be a number, between 1 and 5.</p>
 
             <form method="post" action="options.php">
             <?php
@@ -333,7 +360,7 @@ class YFP_Spam_Settings_Page
                 settings_fields( $this->yfp_settings_group );
                 // This prints out all hidden setting fields for the page.
                 // This will output the section titles wrapped in h3 tags and the settings fields wrapped in tables.
-                do_settings_sections( 'yfp-spam-settings-admin' );
+                do_settings_sections( self::SLUG_MENU_ADMIN );
                 submit_button();
                 //print debug_options_arr($this->options);
             ?>
@@ -351,40 +378,40 @@ class YFP_Spam_Settings_Page
         register_setting(
             $this->yfp_settings_group, // Option group
             $this->wp_options_key_name, // the option name as used in the get_option() call.
-            array( $this, 'sanitize' ) // Sanitize
+            [ $this, 'sanitize' ] // Sanitize
         );
 
         // There is only one section, so any ID will do.
         add_settings_section(
-            'yfp_only_section_id', // ID
+            self::SECTION_ID_1, // ID
             'All settings', // Title
-            array( $this, 'print_section_info' ), // Callback
-            'yfp-spam-settings-admin' // Options page slug, used in do_settings_sections.
+            [ $this, 'print_section_info' ], // Callback
+            self::SLUG_MENU_ADMIN // Options page slug, used in do_settings_sections.
         );
 
         // Need a field for each option that can be changed.
         add_settings_field(
             'rating', // ID
             'Rating (1-5)', // Title
-            array( $this, 'rating_callback' ), // Callback
-            'yfp-spam-settings-admin', // Options page slug
-            'yfp_only_section_id' // Section for this field
+            [ $this, 'rating_callback' ], // Callback
+            self::SLUG_MENU_ADMIN, // Options page slug
+            self::SECTION_ID_1 // Section for this field
         );
 
         add_settings_field(
             'phone',
             'Phone number',
-            array( $this, 'phone_callback' ),
-            'yfp-spam-settings-admin', // Options page slug
-            'yfp_only_section_id' // Section for this field
+            [ $this, 'phone_callback' ],
+            self::SLUG_MENU_ADMIN, // Options page slug
+            self::SECTION_ID_1 // Section for this field
         );
 
         add_settings_field(
             'title',
             'Comment title',
-            array( $this, 'title_callback' ),
-            'yfp-spam-settings-admin', // Options page slug
-            'yfp_only_section_id' // Section for this field
+            [ $this, 'title_callback' ],
+            self::SLUG_MENU_ADMIN, // Options page slug
+            self::SECTION_ID_1 // Section for this field
         );
     }
 
@@ -398,7 +425,7 @@ class YFP_Spam_Settings_Page
      */
     public function sanitize( $input ) {
 
-        $new_input = array();
+        $new_input = [];
         // Make some typing shortcuts:
         $key_title = YFP_Spam_Protection::WPO_KEY_TITLE;
         $key_rating = YFP_Spam_Protection::WPO_KEY_RATING;
@@ -406,7 +433,7 @@ class YFP_Spam_Settings_Page
         // New installation or saving for the first time.
         if (!is_array($this->options)) {
             // Will allow updating of everything because the keys will not exist.
-            $this->options = array();
+            $this->options = [];
         }
 
         // Determines the type of message displayed, will be changed if there is an error.
@@ -415,7 +442,7 @@ class YFP_Spam_Settings_Page
         $message = '';
         //$message .= 'pre update values: ' . debug_options_arr($this->options) . ' | ';
 
-        // Veryify it is between 1 and 5, but save as a string.
+        // Verify it is between 1 and 5, but save as a string.
         if( isset( $input[$key_rating] ) ) {
 
             $val = absint( $input[$key_rating] );
@@ -425,7 +452,7 @@ class YFP_Spam_Settings_Page
                 // Only update the message if the value has changed.
                 if ( !array_key_exists($key_rating, $this->options) ||
                         $this->options[$key_rating] !== $new_input[$key_rating] ) {
-                    $message .= __('Rating field updated. ');
+                    $message .= __('The Rating field was updated. ');
                 }
             }
             else {
@@ -450,7 +477,7 @@ class YFP_Spam_Settings_Page
                 // Only update the message if the value has changed.
                 if ( !array_key_exists($key_title, $this->options) ||
                         $this->options[$key_title] !== $new_input[$key_title] ) {
-                    $message .= __('Title field updated. ');
+                    $message .= __('The Title field was updated. ');
                 }
             }
             else {
@@ -475,7 +502,7 @@ class YFP_Spam_Settings_Page
                 // Only update the message if the value has changed.
                 if ( !array_key_exists($key_phone, $this->options) ||
                         $this->options[$key_phone] !== $new_input[$key_phone] ) {
-                    $message .= __('Phone field updated. ');
+                    $message .= __('The Phone number was updated. ');
                 }
             }
             else {
@@ -506,12 +533,11 @@ class YFP_Spam_Settings_Page
     }
 
     /**
-     * Print the Section text
+     * Print the Section text. There is only one section.
      */
     public function print_section_info() {
 
-        _e('All setting for the plugin are on this page. Enter your settings below:');
-        //print debug_options_arr($this->options);
+        _e('All of the settings are here. Enter any changes below:');
     }
 
     /**
@@ -520,7 +546,7 @@ class YFP_Spam_Settings_Page
     public function rating_callback() {
 
         $key = YFP_Spam_Protection::WPO_KEY_RATING;
-        printf( $this->tplt_input_element,
+        printf( self::TPLT_INPUT_ELEMENT,
             __('updated rating'),
             $this->wp_options_key_name . '[' . $key . ']',
             isset( $this->options[$key] ) ? esc_attr( $this->options[$key]) :
@@ -534,7 +560,7 @@ class YFP_Spam_Settings_Page
     public function title_callback() {
 
         $key = YFP_Spam_Protection::WPO_KEY_TITLE;
-        printf( $this->tplt_input_element,
+        printf( self::TPLT_INPUT_ELEMENT,
             __('updated title'),
             $this->wp_options_key_name . '[' . $key . ']',
             isset( $this->options[$key] ) ? esc_attr( $this->options[$key]) :
@@ -547,7 +573,7 @@ class YFP_Spam_Settings_Page
     public function phone_callback() {
 
         $key = YFP_Spam_Protection::WPO_KEY_PHONE;
-        printf( $this->tplt_input_element,
+        printf( self::TPLT_INPUT_ELEMENT,
             __('updated phone'),
             $this->wp_options_key_name . '[' . $key . ']',
             isset( $this->options[$key] ) ? esc_attr( $this->options[$key]) :
