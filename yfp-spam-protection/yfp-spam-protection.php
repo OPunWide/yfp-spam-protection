@@ -351,7 +351,7 @@ function verify_comment_meta_data( $commentData ) {
         if ( count($dieMsgs) ) {
 
             // Debug messages: Get options from the WP database and show the data.
-            if (0) {
+            if (1) {
                 $optionsData = get_option(YFP_Spam_Protection::WP_OPTION_KEY);
                 $dieMsgs[] = '$optionsData<br />' . print_r( $optionsData, true );
                 $dieMsgs[] = '$_POST<br />' . print_r( $_POST, true );
@@ -369,8 +369,13 @@ function verify_comment_meta_data( $commentData ) {
 }
 
 
-
-function debug_options_arr($dataArr) {
+/**
+ * Debug aid for printing an array using var_dump.
+ *
+ * @param array $dataArr
+ * @return string
+ */
+function _yfp_dump_arr_to_html($dataArr) {
     ob_start();
     var_dump($dataArr);
     $data = ob_get_clean();
@@ -418,7 +423,8 @@ class YFP_Spam_Settings_Page
 
         // The option name as used in the get_option() call.
         $this->wp_options_key_name = YFP_Spam_Protection::WP_OPTION_KEY;
-        $this->yfp_settings_group = $this->wp_options_key_name;
+        // Make it a different name, more consistent with other plugins.
+        $this->yfp_settings_group = $this->wp_options_key_name . '_settings_group';
         // Get and save the current options, but why?
         $this->options = get_option( $this->wp_options_key_name );
 
@@ -466,7 +472,7 @@ class YFP_Spam_Settings_Page
                 // This will output the section titles wrapped in h3 tags and the settings fields wrapped in tables.
                 do_settings_sections( self::SLUG_MENU_ADMIN );
                 submit_button();
-                //print debug_options_arr($this->options);
+                //print _yfp_dump_arr_to_html($this->options);
             ?>
             </form>
         </div>
@@ -489,15 +495,21 @@ class YFP_Spam_Settings_Page
     }
 
     /**
-     * Register and add settings
+     * Register and add settings. Updates in V1.3 make this require WP >= 4.7.
+     * This is a callback for "admin_init".
      */
     public function yfp_options_init() {
 
         $this->options = get_option( $this->wp_options_key_name );
+
+        // Adds an entry for this plugin. Parm #3 changed to array in WP 4.7.
         register_setting(
             $this->yfp_settings_group, // Option group
             $this->wp_options_key_name, // the option name as used in the get_option() call.
-            [ $this, 'sanitize' ] // Sanitize
+            [
+                'description' => 'All data for spam protection.', // Used by REST API, not enabled.
+                'sanitize_callback' => [ $this, 'sanitize_submission' ], // Sanitize the submitted data.
+            ]
         );
 
         // There is only one section, so any ID will do.
@@ -533,116 +545,50 @@ class YFP_Spam_Settings_Page
      * it won't be saved. Because all of the used data is in a single options
      * key, that means that values will return to the default. So code was
      * added to fix that.
+     * 
+     * The code became long and complicated enough that it made sense to move
+     * it into a separate class for clarity. That class does not modify the
+     * data, only validates it.
      *
-     * @param array $input Contains all settings fields as array keys
+     * @param array $input - Contains all settings fields as array keys
+     * @returns array - validated data ready for database modification.
      */
-    public function sanitize( $input ) {
+    public function sanitize_submission( $input ) {
 
-        $new_input = [];
-        // Make some typing shortcuts:
-        $key_title = YFP_Spam_Protection::WPO_KEY_TITLE;
-        $key_rating = YFP_Spam_Protection::WPO_KEY_RATING;
-        $key_phone = YFP_Spam_Protection::WPO_KEY_PHONE;
+        // Errors and or debug.
+        $dbgMessages = [];
         // New installation or saving for the first time.
         if (!is_array($this->options)) {
             // Will allow updating of everything because the keys will not exist.
             $this->options = [];
         }
 
-        // Determines the type of message displayed, will be changed if there is an error.
-        $type = 'updated';
-        //$data = debug_options_arr($input);
-        $message = '';
-        //$message .= 'pre update values: ' . debug_options_arr($this->options) . ' | ';
+        //$dbgMessages[] = 'raw input: ' . _yfp_dump_arr_to_html($input);
+        //$dbgMessages[] = 'pre update db values: ' . _yfp_dump_arr_to_html($this->options) . ' | ';
+        // Parse and validate the inputs.
+        $oValidator = new Yfp_Spam_Form_Validator($this->options, $input);
 
-        // Verify it is between 1 and 5, but save as a string.
-        if( isset( $input[$key_rating] ) ) {
+        // Only get it once to make sure the same thing goes to the debug msg.
+        $new_input = $oValidator->get_sanitized();
+        //$dbgMessages[] = '$oValidator "sanitize" values: ' . _yfp_dump_arr_to_html($new_input);
 
-            $val = absint( $input[$key_rating] );
-            if ( 0 < $val && 5 >= $val ) {
+        // Debug or actual parse messages
+        $messages = array_merge($dbgMessages, $oValidator->get_messages());
+        if ( count($messages) ) {
 
-                $new_input[$key_rating] = strval($val);
-                // Only update the message if the value has changed.
-                if ( !array_key_exists($key_rating, $this->options) ||
-                        $this->options[$key_rating] !== $new_input[$key_rating] ) {
-                    $message .= __('The Rating field was updated. ');
-                }
-            }
-            else {
-                $type = 'error';
-                $message .= __('Rating must be a number from 1 to 5. ');
-                if ( array_key_exists($key_rating, $this->options) ) {
-                    // Keep the current setting.
-                    $new_input[$key_rating] = $this->options[$key_rating];
-                }
-                else {
-                    // Use the default.
-                    $new_input[$key_rating] = YFP_Spam_Protection::DEFAULT_RATING;
-                }
-            }
-        }
-
-        if( isset( $input[$key_title] ) ) {
-            $val = sanitize_text_field( $input[$key_title] );
-            $chars = strlen( $val );
-            if ( 0 !== $chars && 20 >= $chars ) {
-                $new_input[$key_title] = $val;
-                // Only update the message if the value has changed.
-                if ( !array_key_exists($key_title, $this->options) ||
-                        $this->options[$key_title] !== $new_input[$key_title] ) {
-                    $message .= __('The Title field was updated. ');
-                }
-            }
-            else {
-                $type = 'error';
-                $message .= __('Title cannot be empty or contain html, and must be 20 or fewer characters. ');
-                if ( array_key_exists($key_title, $this->options) ) {
-                    // Keep the current setting.
-                    $new_input[$key_title] = $this->options[$key_title];
-                }
-                else {
-                    // Use the default.
-                    $new_input[$key_title] = YFP_Spam_Protection::DEFAULT_TITLE;
-                }
-            }
-        }
-
-        if( isset( $input[$key_phone] ) ) {
-            $val = sanitize_text_field( $input[$key_phone] );
-            $chars = strlen( $val );
-            if ( 0 !== $chars && 15 >= $chars ) {
-                $new_input[$key_phone] = $val;
-                // Only update the message if the value has changed.
-                if ( !array_key_exists($key_phone, $this->options) ||
-                        $this->options[$key_phone] !== $new_input[$key_phone] ) {
-                    $message .= __('The Phone number was updated. ');
-                }
-            }
-            else {
-                $type = 'error';
-                $message .= __('Phone cannot be empty or contain html, and must be 15 characters or less. ');
-                if ( array_key_exists($key_phone, $this->options) ) {
-                    // Keep the current setting.
-                    $new_input[$key_phone] = $this->options[$key_phone];
-                }
-                else {
-                    // Use the default.
-                    $new_input[$key_phone] = YFP_Spam_Protection::DEFAULT_PHONE;
-                }
-            }
-        }
-
-        //$message .= ' | debug: ' . debug_options_arr($new_input);
-        if ('' !== $message) {
-
+            $message = implode("<br />\n", $messages) . "\n";
+            // WP: this is designed for a message that it will wrap p tag.
             add_settings_error(
                 'unusedUniqueIdentifyer',
                 esc_attr( 'settings_updated' ),
                 $message,
-                $type
+                // WP 5.3 Possible values include 'error', 'success', 'warning', 'info'
+                $oValidator->get_settings_error_type()
             );
         }
+
         return $new_input;
+
     }
 
     /**
@@ -693,12 +639,203 @@ class YFP_Spam_Settings_Page
             isset( $this->options[$key] ) ? esc_attr( $this->options[$key]) :
                 YFP_Spam_Protection::DEFAULT_PHONE
         );
-        //print 'current options: ' . debug_options_arr( $this->options);
+        //print 'current options: ' . _yfp_dump_arr_to_html( $this->options);
     }
 }
 
 
+/**
+ * A separate form data validator class because the single function one was too
+ * complicated. This validates the admin page data. It does not access the
+ * database, but operates only on the input data.
+ */
+class Yfp_Spam_Form_Validator
+{
+    // Make some typing shortcuts for the database data keys:
+    const KDB_TITLE = YFP_Spam_Protection::WPO_KEY_TITLE;
+    const KDB_RATING = YFP_Spam_Protection::WPO_KEY_RATING;
+    const KDB_PHONE = YFP_Spam_Protection::WPO_KEY_PHONE;
+
+    // Defined by WP's add_settings_error() function.
+    const TYPE_ERR_CODE = 'error';
+    // The original database data.
+    private $dbArr = null;
+    // Data sent by the form submission.
+    private $formInArr = null;
+    // The sanitized output data.
+    private $saneInput = [];
+    // Messages generated during parsing; array of strings.
+    private $messages = [];
+    // 'updated' may be an old example value. Not listed as valid now, but works.
+    private $typeAddSettingsError = 'updated';
+
+    /**
+     * A common error condition handler to determine the output value. This is
+     * only called when an error has occurred that should modify the WP
+     * add_settings_error function's "type".
+     *
+     * @param string $curKey
+     * @param string $default
+     */
+    private function handle_error_input($curKey, $default) {
+        $this->typeAddSettingsError = self::TYPE_ERR_CODE;
+        $this->saneInput[$curKey] = (array_key_exists($curKey, $this->dbArr) ?
+                // Keep the current db setting or use the default.
+                $this->dbArr[$curKey] : $default
+        );
+    }
+
+    /**
+     * Only called if the title key was set.
+     *
+     * @param string $inData - the data provided by the form.
+     */
+    private function parse_title( $inData ) {
+        
+        // The keys in all 3 arrays are the same; this is the title key.
+        $curKey = self::KDB_TITLE;
+
+        $val = sanitize_text_field( $inData );
+        $chars = strlen( $val );
+        if ( 0 !== $chars && 20 >= $chars ) {
+            $this->saneInput[$curKey] = $val;
+            // Only update the message if the value has changed.
+            if ( !array_key_exists($curKey, $this->dbArr) ||
+                    $this->dbArr[$curKey] !== $this->saneInput[$curKey] ) {
+                $this->messages[] = __('The Title field was updated. ');
+            }
+        }
+        // Input data did not meet the validation filter.
+        else {
+            $this->messages[] = __('Title cannot be empty or contain html, and ' .
+                    'must be 20 or fewer characters. ');
+            $this->handle_error_input($curKey, YFP_Spam_Protection::DEFAULT_TITLE);
+        }
+    }
+
+    /**
+     * Only called if the Phone key was set.
+     *
+     * @param string $inData - the data provided by the form.
+     */
+    private function parse_phone( $inData ) {
+        
+        // The keys in all 3 arrays are the same; this is the phone key.
+        $curKey = self::KDB_PHONE;
+
+        $val = sanitize_text_field( $inData );
+        $chars = strlen( $val );
+        if ( 0 !== $chars && 15 >= $chars ) {
+            $this->saneInput[$curKey] = $val;
+            // Only update the message if the value has changed.
+            if ( !array_key_exists($curKey, $this->dbArr) ||
+                    $this->dbArr[$curKey] !== $this->saneInput[$curKey] ) {
+                $this->messages[] = __('The Phone number was updated. ');
+            }
+        }
+        else {
+            $this->messages[] = __('Phone cannot be empty or contain html, ' .
+                    'and must be 15 characters or less. ');
+            $this->handle_error_input($curKey, YFP_Spam_Protection::DEFAULT_PHONE);
+        }
+    }
+
+    /**
+     * Only called if the Rating key was set. The limits are used in multiple
+     * places, so changing it from "5" here is not enough.
+     *
+     * @param string $inData - the data provided by the form.
+     */
+    private function parse_rating( $inData ) {
+        
+        // The keys in all 3 arrays are the same; this is the Rating key.
+        $curKey = self::KDB_RATING;
+        $val = absint( $inData );
+        if ( 0 < $val && 5 >= $val ) {
+
+            $this->saneInput[$curKey] = strval($val);
+            // Only update the message if the value has changed.
+            if ( !array_key_exists($curKey, $this->dbArr) ||
+                    $this->dbArr[$curKey] !== $this->saneInput[$curKey] ) {
+                $this->messages[] = __('The Rating field was updated. ');
+            }
+        }
+        else {
+            $this->messages[] = __('Rating must be a number from 1 to 5. ');
+            $this->handle_error_input($curKey, YFP_Spam_Protection::DEFAULT_RATING);
+        }
+    }
+
+    /**
+     * Check each element for new data and parse it if a value was set.
+     */
+    private function parse_inputs() {
+
+        if( isset( $this->formInArr[self::KDB_RATING] ) ) {
+            //$this->messages[] = 'Rating is set: ' . $this->formInArr[self::KDB_RATING];
+            $this->parse_rating( $this->formInArr[self::KDB_RATING] );
+        }
+
+        if( isset( $this->formInArr[self::KDB_TITLE] ) ) {
+            //$this->messages[] = 'Ttile is set: ' . $this->formInArr[self::KDB_TITLE];
+            $this->parse_title( $this->formInArr[self::KDB_TITLE] );
+        }
+
+        if( isset( $this->formInArr[self::KDB_PHONE] ) ) {
+            //$this->messages[] = 'Phone is set: ' . $this->formInArr[self::KDB_PHONE];
+            $this->parse_phone( $this->formInArr[self::KDB_PHONE] );
+        }
+    }
+
+    /**
+     * Both input arrays have exactly the same keys (when the keys exist). This
+     * class does validation checks for each type of data supplied by the form.
+     * 
+     * @param array $existingDbArr - data read from the database.
+     * @param array $formInputArr - data supplied by the form.
+     */
+    function __construct($existingDbArr, $formInputArr) {
+        
+        $this->dbArr = $existingDbArr;
+        $this->formInArr = $formInputArr;
+        $this->parse_inputs();
+    }
+
+
+    /**
+     * Messages generated during parsing. May be empty if no changes were made
+     * and no errors were encountered.
+     * 
+     * @return array - list of string messages, if any.
+     */
+    public function get_messages() {
+
+        return $this->messages;
+    }
+    
+    /**
+     * The sanitized data array. Creating this is the purpose of this class.
+     * @return array
+     */
+    public function get_sanitized() {
+
+        return $this->saneInput;
+    }
+
+    /**
+     * If an error occurred during parsing, this will be set to "error".
+     * @return string
+     */
+    public function get_settings_error_type() {
+        
+        return $this->typeAddSettingsError;
+    }
+}
+
+
+// Launch the class that will setup hooks and admin data only if this is admin mode.
 if( is_admin() ) {
 
+    // The variable is not used, but eliminates a warning.
     $my_settings_page = new YFP_Spam_Settings_Page();
 }
