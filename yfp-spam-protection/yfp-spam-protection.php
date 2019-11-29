@@ -41,6 +41,12 @@ class YFP_Spam_Protection
     const DEFAULT_TITLE = 'bad';
     const DEFAULT_RATING = '1';
 
+    // ID and name fields, and therefore POST keys. The prefix is to
+    //  distinguish IDs from DB keys.
+    const FNAME_PHONE = 'in_phone';
+    const FNAME_TITLE = 'in_title';
+    const FNAME_RATING = 'in_rating';
+
     // These are used to pick which data to return.
     const TYPE_PHONE = 1;
     const TYPE_TITLE = 2;
@@ -52,17 +58,20 @@ class YFP_Spam_Protection
     const WPO_KEY_RATING = 'ra';
     const WPO_KEY_TITLE = 'ti';
 
+    // Text for the forms and error messages.
+    const TPL_INPUT_PRE = '<p class="%s"><label for="%s">%s <span class="required">*</span></label>';
+    const TPL_INPUT_TAG = '<input id="%s" name="%s" type="text" size="30" />';
+    const TPL_ERR_PRE_PART = 'Error: You did not %s.';
+    const TPL_ERR_POST_PART =
+            '%s, it is part of the spam filter. Hit the BACK button on your browser and resubmit your comment.';
+
     // The current value of the option.
     private $cur_val_phone;
     private $cur_val_title;
     private $cur_val_rating;
 
-    // Text for the forms and error messages.
-    const TPL_INPUT_PRE = '<p class="%s"><label for="%s">%s <span class="required">*</span></label>';
-    const TPL_INPUT_TAG = '<input id="%s" name="%s" type="text" size="30" />';
+    // Radio buttons are build during construction and saved here.
     private $tplt_rating_stars = '';
-    private $tplt_err_pre = 'Error: You did not %s.';
-    private $tplt_err_post = '%s, it is part of the spam filter. Hit the BACK button on your browser and resubmit your comment.';
 
     /**
      * If $key exists in $arr and it is a non-empty string return it, else return $default.
@@ -128,6 +137,26 @@ class YFP_Spam_Protection
 
 
     /**
+     * Used once to create most of the HTML for the ratings radio button
+     * section.
+     *
+     * @return string
+     */
+    private function build_ratings_inputs_html() {
+
+        // Build the rating text, a sequence of radio button inputs.
+        $tpl_rating_input = '<span class="commentrating"><input type="radio" name="' .
+                self::FNAME_RATING . '" value="%s" />%s</span>';
+        $parts = [];
+        for( $i=1; $i <= 5; $i++ ) {
+            $parts[] = sprintf($tpl_rating_input, $i, $i);
+        }
+
+        return implode("\n", $parts) . "\n";
+    }
+
+
+    /**
      * Set the initial values for things that cannot be constants.
      *
      */
@@ -141,14 +170,8 @@ class YFP_Spam_Protection
                 $optionsData, self::WPO_KEY_TITLE, self::DEFAULT_TITLE);
         $this->cur_val_rating = $this->array_val_or_default(
                 $optionsData, self::WPO_KEY_RATING, self::DEFAULT_RATING);
-
-        // Set up the rating text, a sequence of radio button inputs.
-        $tpl_rating_input = '<span class="commentrating"><input type="radio" name="rating" value="%s" />%s</span>';
-        $parts = [];
-        for( $i=1; $i <= 5; $i++ ) {
-            $parts[] = sprintf($tpl_rating_input, $i, $i);
-        }
-        $this->tplt_rating_stars = implode("\n", $parts) . "\n";
+        // Build the rating text, a sequence of radio button inputs.
+        $this->tplt_rating_stars = $this->build_ratings_inputs_html();
     }
 
     /**
@@ -162,6 +185,7 @@ class YFP_Spam_Protection
      * @return type
      */
     public function is_expected_value( $fieldtype, $val ) {
+
         return strtoupper($this->get_expected_value( $fieldtype )) === strtoupper($val);
     }
 
@@ -177,22 +201,22 @@ class YFP_Spam_Protection
         switch ( $fieldtype ) {
 
             case self::TYPE_PHONE:
-                $htm .= __(sprintf( $this->tplt_err_pre, 'enter your phone number' ));
-                $htm .= __(sprintf( $this->tplt_err_post, ' Enter "' .
+                $htm .= __(sprintf( self::TPL_ERR_PRE_PART, 'enter your phone number' ));
+                $htm .= __(sprintf( self::TPL_ERR_POST_PART, ' Enter "' .
                         $this->get_expected_value_in_bold(self::TYPE_PHONE) .
                         '" without the quotes' ));
                 break;
 
             case self::TYPE_TITLE:
-                $htm .= __(sprintf( $this->tplt_err_pre, 'enter a Comment Title' ));
-                $htm .= __(sprintf( $this->tplt_err_post, ' Enter "' .
+                $htm .= __(sprintf( self::TPL_ERR_PRE_PART, 'enter a Comment Title' ));
+                $htm .= __(sprintf( self::TPL_ERR_POST_PART, ' Enter "' .
                         $this->get_expected_value_in_bold(self::TYPE_TITLE) .
                         '" without the quotes' ));
                 break;
 
             case self::TYPE_RATING:
-                $htm .= __(sprintf( $this->tplt_err_pre, 'enter a rating' ));
-                $htm .= __(sprintf( $this->tplt_err_post, ' It must be rated as a ' .
+                $htm .= __(sprintf( self::TPL_ERR_PRE_PART, 'enter a rating' ));
+                $htm .= __(sprintf( self::TPL_ERR_POST_PART, ' It must be rated as a ' .
                         $this->get_expected_value_in_bold(self::TYPE_RATING) ));
                 break;
         }
@@ -215,22 +239,25 @@ class YFP_Spam_Protection
 
             case self::TYPE_PHONE:
                 $tlate = __(sprintf( 'Phone (must use number: %s)', $this->cur_val_phone));
-                $parts[] = sprintf( self::TPL_INPUT_PRE, 'comment-form-phone', 'phone', $tlate ) . "\n";
-                $parts[] = sprintf( self::TPL_INPUT_TAG, 'phone', 'phone' );
+                // wrapper class name; for= id name; the html message for the input.
+                $parts[] = sprintf( self::TPL_INPUT_PRE, 'comment-form-phone', self::FNAME_PHONE, $tlate ) . "\n";
+                // ID; name;
+                $parts[] = sprintf( self::TPL_INPUT_TAG, self::FNAME_PHONE, self::FNAME_PHONE );
                 $parts[] = '</p>';
                 break;
 
             case self::TYPE_TITLE:
                 $tlate = __(sprintf( 'Comment Title (must use text: %s)', $this->cur_val_title));
-                $parts[] = sprintf( self::TPL_INPUT_PRE, 'comment-form-title', 'title', $tlate ) . "\n";
-                $parts[] = sprintf( self::TPL_INPUT_TAG, 'title', 'title' );
+                $parts[] = sprintf( self::TPL_INPUT_PRE, 'comment-form-title', self::FNAME_TITLE, $tlate ) . "\n";
+                $parts[] = sprintf( self::TPL_INPUT_TAG, self::FNAME_TITLE, self::FNAME_TITLE );
                 $parts[] = '</p>';
                 break;
 
             case self::TYPE_RATING:
                 $tlate = __(sprintf( 'Rating (must select: %s)', $this->cur_val_rating));
-                $parts[] = sprintf( self::TPL_INPUT_PRE, 'comment-form-rating', 'rating', $tlate);
+                $parts[] = sprintf( self::TPL_INPUT_PRE, 'comment-form-rating', self::FNAME_RATING, $tlate);
                 $parts[] = "<br />\n";
+                // The input tag was build in the constructor.
                 $parts[] = '<span class="commentratingbox">' . "\n" . $this->tplt_rating_stars . '</span>';
                 $parts[] = '</p>';
                 break;
@@ -253,18 +280,17 @@ function fyp_spampro_add_plugin_page_settings($links) {
 }
 
 // Add custom fields to the default comment form
-// Default comment form elements are hidden when user is logged in
+// Default comment form elements are hidden when the user is logged in.
 add_filter('comment_form_default_fields', 'spam_protect_custom_fields');
 function spam_protect_custom_fields($fields) {
 
     $yfpsp = new YFP_Spam_Protection();
     // Add 3 fields, all are required.
-    $fields[ 'phone' ] = $yfpsp->get_field_html(YFP_Spam_Protection::TYPE_PHONE);
-    $fields[ 'title' ] = $yfpsp->get_field_html(YFP_Spam_Protection::TYPE_TITLE);
-    $fields[ 'rating' ] = $yfpsp->get_field_html(YFP_Spam_Protection::TYPE_RATING);
+    $fields[ YFP_Spam_Protection::FNAME_PHONE ] = $yfpsp->get_field_html(YFP_Spam_Protection::TYPE_PHONE);
+    $fields[ YFP_Spam_Protection::FNAME_TITLE ] = $yfpsp->get_field_html(YFP_Spam_Protection::TYPE_TITLE);
+    $fields[ YFP_Spam_Protection::FNAME_RATING ] = $yfpsp->get_field_html(YFP_Spam_Protection::TYPE_RATING);
     return $fields;
 }
-
 
 // Add the filter to check if the comment verification data has been filled.
 add_filter( 'preprocess_comment', 'verify_comment_meta_data' );
@@ -287,9 +313,9 @@ function verify_comment_meta_data( $commentdata ) {
 
         // The $_POST key and the YFP_Spam_Protection class key constant.
         $pairs = [
-            'phone' => YFP_Spam_Protection::TYPE_PHONE,
-            'rating' => YFP_Spam_Protection::TYPE_RATING,
-            'title' => YFP_Spam_Protection::TYPE_TITLE,
+            YFP_Spam_Protection::FNAME_PHONE => YFP_Spam_Protection::TYPE_PHONE,
+            YFP_Spam_Protection::FNAME_TITLE => YFP_Spam_Protection::TYPE_TITLE,
+            YFP_Spam_Protection::FNAME_RATING => YFP_Spam_Protection::TYPE_RATING,
         ];
 
         // Each item must be in the post and have the expected value.
@@ -298,7 +324,7 @@ function verify_comment_meta_data( $commentdata ) {
             if ( !isset( $_POST[$key] ) || !$yfpsp->is_expected_value($objKey, $_POST[$key]) ) {
 
                 // The user must use the browser's Back button to recover.
-                wp_die( $yfpsp->get_verify_failure_message($objKey) );
+                wp_die( $yfpsp->get_verify_failure_message($objKey) /*. print_r($_POST, true)*/ );
             }
         }
     }
@@ -395,7 +421,7 @@ class YFP_Spam_Settings_Page
             <h2>YFP Spam Protection settings</h2>
             <p>The defaults will work for most people. Any of the values can be
             changed to different strings. That will then be the required "answer".
-            The Ratings value must be a number, between 1 and 5.</p>
+            The value for Rating must be a number, between 1 and 5.</p>
 
             <form method="post" action="options.php">
             <?php
@@ -410,6 +436,21 @@ class YFP_Spam_Settings_Page
             </form>
         </div>
         <?php
+    }
+
+    /**
+     * DRY for adding a field to the only section.
+     *
+     * @param string $theId - ID, needs to be unique within a section
+     * @param string $theDesc - text displayed for the field
+     * @param string $cbName - callback method that prints the input elem HTML
+     */
+    private function add_sec1_field($theId, $theDesc, $cbName) {
+
+        add_settings_field($theId, $theDesc, [$this, $cbName],
+            self::SLUG_MENU_ADMIN, // Options page slug
+            self::SECTION_ID_1 // Section for this field
+        );
     }
 
     /**
@@ -432,29 +473,23 @@ class YFP_Spam_Settings_Page
             self::SLUG_MENU_ADMIN // Options page slug, used in do_settings_sections.
         );
 
-        // Need a field for each option that can be changed.
-        add_settings_field(
-            'rating', // ID
+        // Need a field for each option that can be set.
+        $this->add_sec1_field(
+            'rating1', // ID, only needs to be unique within a section.
             'Rating (1-5)', // Title
-            [ $this, 'rating_callback' ], // Callback
-            self::SLUG_MENU_ADMIN, // Options page slug
-            self::SECTION_ID_1 // Section for this field
+            'rating_callback' // Callback method name
         );
 
-        add_settings_field(
-            'phone',
+        $this->add_sec1_field(
+            'phone1',
             'Phone number',
-            [ $this, 'phone_callback' ],
-            self::SLUG_MENU_ADMIN, // Options page slug
-            self::SECTION_ID_1 // Section for this field
+            'phone_callback'
         );
 
-        add_settings_field(
-            'title',
+        $this->add_sec1_field(
+            'title1',
             'Comment title',
-            [ $this, 'title_callback' ],
-            self::SLUG_MENU_ADMIN, // Options page slug
-            self::SECTION_ID_1 // Section for this field
+            'title_callback'
         );
     }
 
@@ -626,6 +661,7 @@ class YFP_Spam_Settings_Page
         //print 'current options: ' . debug_options_arr( $this->options);
     }
 }
+
 
 if( is_admin() ) {
 
