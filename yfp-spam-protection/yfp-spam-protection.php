@@ -34,6 +34,7 @@ Requires PHP: 5.4
 
 /**
  * This class is used for all of the interaction with the comment form's filters.
+ * It does not handle any of the admin tasks.
  */
 class YFP_Spam_Protection
 {
@@ -52,18 +53,22 @@ class YFP_Spam_Protection
     const TYPE_TITLE = 2;
     const TYPE_RATING = 3;
 
-    // These are used in wp_options: The key for the table and the array keys is saves.
+    // These are used in wp_options:
+    // The key this plugin uses for its options table data.
     const WP_OPTION_KEY = 'yfp_spam_protection';
+    // Data is saved using these keys within the one database option variable.
     const WPO_KEY_PHONE = 'ph';
     const WPO_KEY_RATING = 'ra';
     const WPO_KEY_TITLE = 'ti';
 
     // Text for the forms and error messages.
-    const TPL_INPUT_PRE = '<p class="%s"><label for="%s">%s <span class="required">*</span></label>';
+    const TPL_INPUT_PRE =
+            '<p class="%s"><label for="%s">%s <span class="required">*</span></label>';
     const TPL_INPUT_TAG = '<input id="%s" name="%s" type="text" size="30" />';
-    const TPL_ERR_PRE_PART = 'Error: You did not %s.';
+    const TPL_ERR_PRE_PART = 'Error: Please %s.';
     const TPL_ERR_POST_PART =
-            '%s, it is part of the spam filter. Hit the BACK button on your browser and resubmit your comment.';
+            '%s, it is part of the comment spam filter. Hit the BACK button on ' .
+            'your browser and resubmit your comment.';
 
     // The current value of the option.
     private $cur_val_phone;
@@ -74,7 +79,8 @@ class YFP_Spam_Protection
     private $tplt_rating_stars = '';
 
     /**
-     * If $key exists in $arr and it is a non-empty string return it, else return $default.
+     * If $key exists in $arr and it is a non-empty string return it, else
+     * return $default.
      *
      * @param array $arr
      * @param string $key
@@ -120,7 +126,6 @@ class YFP_Spam_Protection
 
             case self::TYPE_PHONE:
                 $text = $this->cur_val_phone;
-
                 break;
 
             case self::TYPE_TITLE:
@@ -145,7 +150,8 @@ class YFP_Spam_Protection
     private function build_ratings_inputs_html() {
 
         // Build the rating text, a sequence of radio button inputs.
-        $tpl_rating_input = '<span class="commentrating"><input type="radio" name="' .
+        $tpl_rating_input =
+                '<span class="commentrating"><input type="radio" name="' .
                 self::FNAME_RATING . '" value="%s" />%s</span>';
         $parts = [];
         for( $i=1; $i <= 5; $i++ ) {
@@ -190,42 +196,43 @@ class YFP_Spam_Protection
     }
 
     /**
-     * Get the expected value for the field to verify.
+     * If a field had the wrong data, this is called to get a message about that
+     * field. It is the part of the failure that is specific to a single field.
      *
      * @param mixed $fieldtype - one of the class' TYPE_ constants
      * @return string
      */
     public function get_verify_failure_message( $fieldtype ) {
 
-        $htm = '';
+        $htmParts = [];
         switch ( $fieldtype ) {
 
             case self::TYPE_PHONE:
-                $htm .= __(sprintf( self::TPL_ERR_PRE_PART, 'enter your phone number' ));
-                $htm .= __(sprintf( self::TPL_ERR_POST_PART, ' Enter "' .
+                $htmParts[] = __(sprintf( self::TPL_ERR_PRE_PART, 'enter the Phone Number' ));
+                $htmParts[] = __(sprintf( self::TPL_ERR_POST_PART, ' Enter "' .
                         $this->get_expected_value_in_bold(self::TYPE_PHONE) .
                         '" without the quotes' ));
                 break;
 
             case self::TYPE_TITLE:
-                $htm .= __(sprintf( self::TPL_ERR_PRE_PART, 'enter a Comment Title' ));
-                $htm .= __(sprintf( self::TPL_ERR_POST_PART, ' Enter "' .
+                $htmParts[] = __(sprintf( self::TPL_ERR_PRE_PART, 'enter the Comment Title' ));
+                $htmParts[] = __(sprintf( self::TPL_ERR_POST_PART, ' Enter "' .
                         $this->get_expected_value_in_bold(self::TYPE_TITLE) .
                         '" without the quotes' ));
                 break;
 
             case self::TYPE_RATING:
-                $htm .= __(sprintf( self::TPL_ERR_PRE_PART, 'enter a rating' ));
-                $htm .= __(sprintf( self::TPL_ERR_POST_PART, ' It must be rated as a ' .
+                $htmParts[] = __(sprintf( self::TPL_ERR_PRE_PART, 'enter the Rating' ));
+                $htmParts[] = __(sprintf( self::TPL_ERR_POST_PART, ' It must be rated as a ' .
                         $this->get_expected_value_in_bold(self::TYPE_RATING) ));
                 break;
         }
 
-        return $htm;
+        return implode('', $htmParts) . "\n";
     }
 
     /**
-     * Gets the contents for a field on the form.
+     * Gets the HTML contents for a field on the comment form.
      * Ignore bad field type values. Should an error be thrown instead?
      *
      * @param mixed $fieldtype - one of the class' TYPE_ constants
@@ -240,7 +247,8 @@ class YFP_Spam_Protection
             case self::TYPE_PHONE:
                 $tlate = __(sprintf( 'Phone (must use number: %s)', $this->cur_val_phone));
                 // wrapper class name; for= id name; the html message for the input.
-                $parts[] = sprintf( self::TPL_INPUT_PRE, 'comment-form-phone', self::FNAME_PHONE, $tlate ) . "\n";
+                $parts[] = sprintf( self::TPL_INPUT_PRE, 'comment-form-phone',
+                        self::FNAME_PHONE, $tlate ) . "\n";
                 // ID; name;
                 $parts[] = sprintf( self::TPL_INPUT_TAG, self::FNAME_PHONE, self::FNAME_PHONE );
                 $parts[] = '</p>';
@@ -248,17 +256,20 @@ class YFP_Spam_Protection
 
             case self::TYPE_TITLE:
                 $tlate = __(sprintf( 'Comment Title (must use text: %s)', $this->cur_val_title));
-                $parts[] = sprintf( self::TPL_INPUT_PRE, 'comment-form-title', self::FNAME_TITLE, $tlate ) . "\n";
+                $parts[] = sprintf( self::TPL_INPUT_PRE, 'comment-form-title',
+                        self::FNAME_TITLE, $tlate ) . "\n";
                 $parts[] = sprintf( self::TPL_INPUT_TAG, self::FNAME_TITLE, self::FNAME_TITLE );
                 $parts[] = '</p>';
                 break;
 
             case self::TYPE_RATING:
                 $tlate = __(sprintf( 'Rating (must select: %s)', $this->cur_val_rating));
-                $parts[] = sprintf( self::TPL_INPUT_PRE, 'comment-form-rating', self::FNAME_RATING, $tlate);
+                $parts[] = sprintf( self::TPL_INPUT_PRE, 'comment-form-rating',
+                        self::FNAME_RATING, $tlate);
                 $parts[] = "<br />\n";
                 // The input tag was build in the constructor.
-                $parts[] = '<span class="commentratingbox">' . "\n" . $this->tplt_rating_stars . '</span>';
+                $parts[] = '<span class="commentratingbox">' . "\n" .
+                        $this->tplt_rating_stars . '</span>';
                 $parts[] = '</p>';
                 break;
         }
@@ -269,7 +280,8 @@ class YFP_Spam_Protection
 
 
 // Add a Settings link to the Plugins page in admin.
-add_filter('plugin_action_links_' . plugin_basename(__FILE__), 'fyp_spampro_add_plugin_page_settings');
+add_filter('plugin_action_links_' . plugin_basename(__FILE__),
+        'fyp_spampro_add_plugin_page_settings');
 function fyp_spampro_add_plugin_page_settings($links) {
     // Add to settings screen
     $url = 'options-general.php?page=' . YFP_Spam_Settings_Page::SLUG_MENU_ADMIN;
@@ -286,9 +298,12 @@ function spam_protect_custom_fields($fields) {
 
     $yfpsp = new YFP_Spam_Protection();
     // Add 3 fields, all are required.
-    $fields[ YFP_Spam_Protection::FNAME_PHONE ] = $yfpsp->get_field_html(YFP_Spam_Protection::TYPE_PHONE);
-    $fields[ YFP_Spam_Protection::FNAME_TITLE ] = $yfpsp->get_field_html(YFP_Spam_Protection::TYPE_TITLE);
-    $fields[ YFP_Spam_Protection::FNAME_RATING ] = $yfpsp->get_field_html(YFP_Spam_Protection::TYPE_RATING);
+    $fields[ YFP_Spam_Protection::FNAME_PHONE ] =
+            $yfpsp->get_field_html(YFP_Spam_Protection::TYPE_PHONE);
+    $fields[ YFP_Spam_Protection::FNAME_TITLE ] =
+            $yfpsp->get_field_html(YFP_Spam_Protection::TYPE_TITLE);
+    $fields[ YFP_Spam_Protection::FNAME_RATING ] =
+            $yfpsp->get_field_html(YFP_Spam_Protection::TYPE_RATING);
     return $fields;
 }
 
@@ -300,10 +315,13 @@ add_filter( 'preprocess_comment', 'verify_comment_meta_data' );
  * properly set. No checking is done if the user is logged in because a logged in
  * user is trusted.
  *
- * @param string $commentdata
+ * If an error is encountered, an error message is displayed and execution stops.
+ * The user must use the browser's Back button to recover. This will exit.
+ *
+ * @param string $commentData
  * @return string;
  */
-function verify_comment_meta_data( $commentdata ) {
+function verify_comment_meta_data( $commentData ) {
 
     // The data is only checked if the user is not logged in.
     if ( !is_user_logged_in() ) {
@@ -319,17 +337,35 @@ function verify_comment_meta_data( $commentdata ) {
         ];
 
         // Each item must be in the post and have the expected value.
+        $dieMsgs = [];
         foreach($pairs as $key => $objKey) {
 
             if ( !isset( $_POST[$key] ) || !$yfpsp->is_expected_value($objKey, $_POST[$key]) ) {
 
                 // The user must use the browser's Back button to recover.
-                wp_die( $yfpsp->get_verify_failure_message($objKey) /*. print_r($_POST, true)*/ );
+                $dieMsgs[] = $yfpsp->get_verify_failure_message( $objKey );
             }
+        }
+
+        // If there were any errors...
+        if ( count($dieMsgs) ) {
+
+            // Debug messages: Get options from the WP database and show the data.
+            if (0) {
+                $optionsData = get_option(YFP_Spam_Protection::WP_OPTION_KEY);
+                $dieMsgs[] = '$optionsData<br />' . print_r( $optionsData, true );
+                $dieMsgs[] = '$_POST<br />' . print_r( $_POST, true );
+            }
+
+            // Make the error HTML.
+            $msg = implode( '<br /><br />', $dieMsgs ) . "<br />\n";
+            // Give the message and exit.
+            wp_die( $msg );
         }
     }
 
-    return $commentdata;
+    // If there were no errors, return the unchanged comment data.
+    return $commentData;
 }
 
 
@@ -344,18 +380,17 @@ function debug_options_arr($dataArr) {
 
 
 /**
- * Taken mostly from the WP sample page, so I'm sure it could be improved.
+ * Taken mostly from the WP sample page, so I'm sure it could be improved. This
+ * is the admin interface.
  */
 class YFP_Spam_Settings_Page
 {
-    /**
-     * Holds the values to be used in the fields callbacks
-    */
-    const TPLT_INPUT_ELEMENT = '<input type="text" id="%s" name="%s" value="%s" />';
     // This plugin's Options page slug - part of the admin url.
     const SLUG_MENU_ADMIN = 'yfp-spam-settings-admin';
     // There is only one section, so any ID will do.
     const SECTION_ID_1 = 'yfp_only_section_id';
+    // The standard text INPUT element HTML template.
+    const TPLT_INPUT_ELEMENT = '<input type="text" id="%s" name="%s" value="%s" />';
 
     // The object that is saved and retrieved from the options_ functions.
     protected $options;
