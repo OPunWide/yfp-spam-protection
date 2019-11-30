@@ -60,6 +60,16 @@ class YFP_Spam_Protection
     const WPO_KEY_PHONE = 'ph';
     const WPO_KEY_RATING = 'ra';
     const WPO_KEY_TITLE = 'ti';
+    // The enabled keys.
+    const WPO_KEY_ENA_PH = 'enaph';
+    const WPO_KEY_ENA_RA = 'enara';
+    const WPO_KEY_ENA_TI = 'enati';
+
+    const TYPE_TO_ENA_KEY = [
+        self::TYPE_PHONE => self::WPO_KEY_ENA_PH,
+        self::TYPE_RATING => self::WPO_KEY_RATING,
+        self::TYPE_TITLE => self::WPO_KEY_TITLE,
+    ];
 
     // Text for the forms and error messages.
     const TPL_INPUT_PRE =
@@ -186,13 +196,27 @@ class YFP_Spam_Protection
      * may have been transformed to upper. That means that there would be no
      * way to indicate the correct answer.
      *
-     * @param string $fieldtype
+     * @param string $fieldtype - one of the TYPE_ constants
      * @param string $val
      * @return type
      */
     public function is_expected_value( $fieldtype, $val ) {
 
         return strtoupper($this->get_expected_value( $fieldtype )) === strtoupper($val);
+    }
+
+    /**
+     *
+     * @param string $fieldtype - one of the TYPE_ constants
+     * @return boolean
+     */
+    public function is_field_enabled( $fieldtype ) {
+
+        $enaKey = self::TYPE_TO_ENA_KEY[$fieldtype];
+        // Get options from the WP database.
+        $optionsData = get_option(self::WP_OPTION_KEY);
+        $intEna = absint(isset($optionsData[$enaKey]) ? $optionsData[$enaKey] : '1');
+        return $intEna ? true : false;
     }
 
     /**
@@ -297,13 +321,23 @@ add_filter('comment_form_default_fields', 'spam_protect_custom_fields');
 function spam_protect_custom_fields($fields) {
 
     $yfpsp = new YFP_Spam_Protection();
+
     // Add 3 fields, all are required.
-    $fields[ YFP_Spam_Protection::FNAME_PHONE ] =
-            $yfpsp->get_field_html(YFP_Spam_Protection::TYPE_PHONE);
-    $fields[ YFP_Spam_Protection::FNAME_TITLE ] =
-            $yfpsp->get_field_html(YFP_Spam_Protection::TYPE_TITLE);
-    $fields[ YFP_Spam_Protection::FNAME_RATING ] =
-            $yfpsp->get_field_html(YFP_Spam_Protection::TYPE_RATING);
+    if ( $yfpsp->is_field_enabled(YFP_Spam_Protection::TYPE_PHONE) ) {
+        $fields[ YFP_Spam_Protection::FNAME_PHONE ] =
+                $yfpsp->get_field_html(YFP_Spam_Protection::TYPE_PHONE);
+    }
+
+    if ( $yfpsp->is_field_enabled(YFP_Spam_Protection::TYPE_TITLE) ) {
+        $fields[ YFP_Spam_Protection::FNAME_TITLE ] =
+                $yfpsp->get_field_html(YFP_Spam_Protection::TYPE_TITLE);
+    }
+
+    if ( $yfpsp->is_field_enabled(YFP_Spam_Protection::TYPE_RATING) ) {
+        $fields[ YFP_Spam_Protection::FNAME_RATING ] =
+                $yfpsp->get_field_html(YFP_Spam_Protection::TYPE_RATING);
+    }
+
     return $fields;
 }
 
@@ -336,14 +370,20 @@ function verify_comment_meta_data( $commentData ) {
             YFP_Spam_Protection::FNAME_RATING => YFP_Spam_Protection::TYPE_RATING,
         ];
 
-        // Each item must be in the post and have the expected value.
+        // Each item must be in the post and have the expected value, if it is
+        //  enabled.
         $dieMsgs = [];
         foreach($pairs as $key => $objKey) {
 
-            if ( !isset( $_POST[$key] ) || !$yfpsp->is_expected_value($objKey, $_POST[$key]) ) {
+            // Only check enabled items.
+            if ( $yfpsp->is_field_enabled( $objKey ) ) {
 
-                // The user must use the browser's Back button to recover.
-                $dieMsgs[] = $yfpsp->get_verify_failure_message( $objKey );
+                if ( !isset( $_POST[$key] ) ||
+                        !$yfpsp->is_expected_value($objKey, $_POST[$key]) ) {
+
+                    // The user must use the browser's Back button to recover.
+                    $dieMsgs[] = $yfpsp->get_verify_failure_message( $objKey );
+                }
             }
         }
 
@@ -351,10 +391,11 @@ function verify_comment_meta_data( $commentData ) {
         if ( count($dieMsgs) ) {
 
             // Debug messages: Get options from the WP database and show the data.
-            if (1) {
+            if (0) {
                 $optionsData = get_option(YFP_Spam_Protection::WP_OPTION_KEY);
-                $dieMsgs[] = '$optionsData<br />' . print_r( $optionsData, true );
-                $dieMsgs[] = '$_POST<br />' . print_r( $_POST, true );
+                $dieMsgs[] = '$optionsData:<br />' . print_r( $optionsData, true );
+                $dieMsgs[] = '$_POST:<br />' . print_r( $_POST, true );
+                $dieMsgs[] = '$pairs:<br />' . print_r( $pairs, true );
             }
 
             // Make the error HTML.
@@ -396,6 +437,9 @@ class YFP_Spam_Settings_Page
     const SECTION_ID_1 = 'yfp_only_section_id';
     // The standard text INPUT element HTML template.
     const TPLT_INPUT_ELEMENT = '<input type="text" id="%s" name="%s" value="%s" />';
+    // Last variable is for checked="".
+    const TPLT_INPUT_CHECKBOX = '<input class="input-ena" type="checkbox" ' .
+            'id="%s" name="%s" value="%s" %s />';
 
     // The object that is saved and retrieved from the options_ functions.
     protected $options;
@@ -421,7 +465,7 @@ class YFP_Spam_Settings_Page
      */
     public function __construct() {
 
-        // The option name as used in the get_option() call.
+        // The option name as used in the get_option() call. All data is in this key.
         $this->wp_options_key_name = YFP_Spam_Protection::WP_OPTION_KEY;
         // Make it a different name, more consistent with other plugins.
         $this->yfp_settings_group = $this->wp_options_key_name . '_settings_group';
@@ -545,7 +589,7 @@ class YFP_Spam_Settings_Page
      * it won't be saved. Because all of the used data is in a single options
      * key, that means that values will return to the default. So code was
      * added to fix that.
-     * 
+     *
      * The code became long and complicated enough that it made sense to move
      * it into a separate class for clarity. That class does not modify the
      * data, only validates it.
@@ -563,14 +607,20 @@ class YFP_Spam_Settings_Page
             $this->options = [];
         }
 
-        //$dbgMessages[] = 'raw input: ' . _yfp_dump_arr_to_html($input);
-        //$dbgMessages[] = 'pre update db values: ' . _yfp_dump_arr_to_html($this->options) . ' | ';
+        if (isset($showStatus)) {
+
+            $dbgMessages[] = 'raw input: ' . _yfp_dump_arr_to_html($input);
+            $dbgMessages[] = 'pre update db values: ' . _yfp_dump_arr_to_html($this->options);
+        }
+
         // Parse and validate the inputs.
         $oValidator = new Yfp_Spam_Form_Validator($this->options, $input);
-
         // Only get it once to make sure the same thing goes to the debug msg.
         $new_input = $oValidator->get_sanitized();
-        //$dbgMessages[] = '$oValidator "sanitize" values: ' . _yfp_dump_arr_to_html($new_input);
+
+        if (isset($showStatus)) {
+            $dbgMessages[] = '$oValidator "sanitize" values: ' . _yfp_dump_arr_to_html($new_input);
+        }
 
         // Debug or actual parse messages
         $messages = array_merge($dbgMessages, $oValidator->get_messages());
@@ -596,7 +646,24 @@ class YFP_Spam_Settings_Page
      */
     public function print_section_info() {
 
-        _e('All of the settings are here. Enter any changes below:');
+        _e('All of the settings are here. Enter any changes below. ' .
+                'To disable an item, uncheck the checkbox next to it.');
+    }
+
+    /**
+     * Build a checkbox for the related key.
+     * @param string $wpKey - one of the YFP_Spam_Protection::WPO_KEY_ENA_* keys.
+     * @return string - HTML for the checkbox input element.
+     */
+    private function html_checkbox( $wpKey ) {
+
+        // The name, part of the settings, like: yfp_spam_protection[enaph]
+        $idname = $this->to_input_file_name( $wpKey );
+        // All defaults for the checkbox are "1".
+        $cur = isset( $this->options[ $wpKey ] ) ? $this->options[ $wpKey ] : '1';
+        // The attribute only exists when the box is checked.
+        $chkd = $cur ? 'checked="checked"' : '';
+        return sprintf( self::TPLT_INPUT_CHECKBOX, $idname, $idname, '1', $chkd );
     }
 
     /**
@@ -604,13 +671,17 @@ class YFP_Spam_Settings_Page
      */
     public function rating_callback() {
 
+        // A checkbox it enable/disable this option.
+        $disCheck = $this->html_checkbox(YFP_Spam_Protection::WPO_KEY_ENA_RA);
+
         $key = YFP_Spam_Protection::WPO_KEY_RATING;
-        printf( self::TPLT_INPUT_ELEMENT,
+        $textCheck = sprintf( self::TPLT_INPUT_ELEMENT,
             __('updated rating'),
             $this->to_input_file_name($key),
             isset( $this->options[$key] ) ? esc_attr( $this->options[$key]) :
                 YFP_Spam_Protection::DEFAULT_RATING
         );
+        echo $disCheck . $textCheck;
     }
 
     /**
@@ -618,13 +689,17 @@ class YFP_Spam_Settings_Page
      */
     public function title_callback() {
 
+        // A checkbox it enable/disable this option.
+        $disCheck = $this->html_checkbox(YFP_Spam_Protection::WPO_KEY_ENA_TI);
+
         $key = YFP_Spam_Protection::WPO_KEY_TITLE;
-        printf( self::TPLT_INPUT_ELEMENT,
+        $textCheck = sprintf( self::TPLT_INPUT_ELEMENT,
             __('updated title'),
             $this->to_input_file_name($key),
             isset( $this->options[$key] ) ? esc_attr( $this->options[$key]) :
                 YFP_Spam_Protection::DEFAULT_TITLE
         );
+        echo $disCheck . $textCheck;
     }
 
     /**
@@ -632,22 +707,31 @@ class YFP_Spam_Settings_Page
      */
     public function phone_callback() {
 
+        // A checkbox it enable/disable this option.
+        $disCheck = $this->html_checkbox(YFP_Spam_Protection::WPO_KEY_ENA_PH);
+
         $key = YFP_Spam_Protection::WPO_KEY_PHONE;
-        printf( self::TPLT_INPUT_ELEMENT,
+        $textCheck = sprintf( self::TPLT_INPUT_ELEMENT,
             __('updated phone'),
             $this->to_input_file_name($key),
             isset( $this->options[$key] ) ? esc_attr( $this->options[$key]) :
                 YFP_Spam_Protection::DEFAULT_PHONE
         );
         //print 'current options: ' . _yfp_dump_arr_to_html( $this->options);
+        echo $disCheck . $textCheck;
     }
 }
 
 
 /**
- * A separate form data validator class because the single function one was too
- * complicated. This validates the admin page data. It does not access the
- * database, but operates only on the input data.
+ * This is part of the form sanitization. It became a separate form data
+ * validator class because the single function one was too complicated.
+ *
+ * This validates the admin page data. It does not access the
+ * database, but operates only on the input data provided to the constructor.
+ *
+ * The keys in all 3 arrays used for the data are the same; they are the
+ * database keys.
  */
 class Yfp_Spam_Form_Validator
 {
@@ -656,18 +740,33 @@ class Yfp_Spam_Form_Validator
     const KDB_RATING = YFP_Spam_Protection::WPO_KEY_RATING;
     const KDB_PHONE = YFP_Spam_Protection::WPO_KEY_PHONE;
 
+    const KDB_E_TITLE = YFP_Spam_Protection::WPO_KEY_ENA_TI;
+    const KDB_E_RATING = YFP_Spam_Protection::WPO_KEY_ENA_RA;
+    const KDB_E_PHONE = YFP_Spam_Protection::WPO_KEY_ENA_PH;
+
+    // For a map to text names.
+    const FRIENDLY_NAMES = [
+        self::KDB_E_TITLE => 'Title',
+        self::KDB_E_RATING => 'Rating',
+        self::KDB_E_PHONE => 'Phone',
+    ];
+
     // Defined by WP's add_settings_error() function.
     const TYPE_ERR_CODE = 'error';
+
+    // These 3 all use the same keys.
     // The original database data.
     private $dbArr = null;
     // Data sent by the form submission.
     private $formInArr = null;
     // The sanitized output data.
     private $saneInput = [];
+
     // Messages generated during parsing; array of strings.
     private $messages = [];
     // 'updated' may be an old example value. Not listed as valid now, but works.
     private $typeAddSettingsError = 'updated';
+
 
     /**
      * A common error condition handler to determine the output value. This is
@@ -686,12 +785,45 @@ class Yfp_Spam_Form_Validator
     }
 
     /**
+     * Display names for the keys.
+     * @param string $wpKey - such as KDB_E_TITLE
+     * @return string
+     */
+    private function friendly_chkbox_text( $wpKey ) {
+
+        return self::FRIENDLY_NAMES[$wpKey];
+    }
+
+    /**
+     * Standardized field update message.
+     *
+     * @param string $text - string to be wrapped in quotes.
+     * @return string
+     */
+    private function field_updated_msg( $text ) {
+
+        return __('The "'. $text .'" field was updated. ');
+    }
+
+    /**
+     * Checkbox updated message.
+     *
+     * @param string $wpKey - such as KDB_E_TITLE
+     * @return type
+     */
+    private function field_updated_enable_msg( $wpKey ) {
+
+        return __('The "' . $this->friendly_chkbox_text( $wpKey ) .
+                            '" enabled field was updated. ');
+    }
+
+    /**
      * Only called if the title key was set.
      *
      * @param string $inData - the data provided by the form.
      */
     private function parse_title( $inData ) {
-        
+
         // The keys in all 3 arrays are the same; this is the title key.
         $curKey = self::KDB_TITLE;
 
@@ -702,7 +834,7 @@ class Yfp_Spam_Form_Validator
             // Only update the message if the value has changed.
             if ( !array_key_exists($curKey, $this->dbArr) ||
                     $this->dbArr[$curKey] !== $this->saneInput[$curKey] ) {
-                $this->messages[] = __('The Title field was updated. ');
+                $this->messages[] = $this->field_updated_msg('Title');
             }
         }
         // Input data did not meet the validation filter.
@@ -719,7 +851,7 @@ class Yfp_Spam_Form_Validator
      * @param string $inData - the data provided by the form.
      */
     private function parse_phone( $inData ) {
-        
+
         // The keys in all 3 arrays are the same; this is the phone key.
         $curKey = self::KDB_PHONE;
 
@@ -730,7 +862,7 @@ class Yfp_Spam_Form_Validator
             // Only update the message if the value has changed.
             if ( !array_key_exists($curKey, $this->dbArr) ||
                     $this->dbArr[$curKey] !== $this->saneInput[$curKey] ) {
-                $this->messages[] = __('The Phone number was updated. ');
+                $this->messages[] = $this->field_updated_msg('Phone');
             }
         }
         else {
@@ -747,7 +879,7 @@ class Yfp_Spam_Form_Validator
      * @param string $inData - the data provided by the form.
      */
     private function parse_rating( $inData ) {
-        
+
         // The keys in all 3 arrays are the same; this is the Rating key.
         $curKey = self::KDB_RATING;
         $val = absint( $inData );
@@ -757,7 +889,7 @@ class Yfp_Spam_Form_Validator
             // Only update the message if the value has changed.
             if ( !array_key_exists($curKey, $this->dbArr) ||
                     $this->dbArr[$curKey] !== $this->saneInput[$curKey] ) {
-                $this->messages[] = __('The Rating field was updated. ');
+                $this->messages[] = $this->field_updated_msg('Rating');
             }
         }
         else {
@@ -767,9 +899,42 @@ class Yfp_Spam_Form_Validator
     }
 
     /**
+     * The enable/disable checkbox data will not exist when the box is not
+     * checked. Assume that a missing key means that it was set to disable.
+     * The DB values will be strings of 0 or 1.
+     *
+     * @param string $wpKey
+     */
+    private function parse_checkbox( $wpKey ) {
+        $curDb = $this->dbArr[$wpKey];
+        // If the POST data is not set, it's disabled on the form.
+        $newVal = isset( $this->formInArr[$wpKey] ) ? $this->formInArr[$wpKey] : '0';
+
+        if (isset($showStatus)) {
+            $stat = sprintf(' - key: %s; old (db): %s; new (form): %s; new type: %s',
+                    $wpKey, $curDb, $newVal, gettype($newVal));
+            $this->messages[] = __($stat);
+        }
+
+        // Update the database value always or the next update will be a change.
+        $this->saneInput[$wpKey] = $newVal;
+        // Show the database message if there is no string or if the value has changed.
+        if ( $curDb === '' || $newVal !== $curDb ) {
+
+            $this->messages[] = $this->field_updated_enable_msg( $wpKey );
+        }
+    }
+
+    /**
      * Check each element for new data and parse it if a value was set.
      */
     private function parse_inputs() {
+        // All enable keys are processed the same way.
+        $enaKeys = [self::KDB_E_TITLE, self::KDB_E_RATING, self::KDB_E_PHONE];
+        foreach( $enaKeys as $wpKey ) {
+
+            $this->parse_checkbox($wpKey);
+        }
 
         if( isset( $this->formInArr[self::KDB_RATING] ) ) {
             //$this->messages[] = 'Rating is set: ' . $this->formInArr[self::KDB_RATING];
@@ -790,12 +955,12 @@ class Yfp_Spam_Form_Validator
     /**
      * Both input arrays have exactly the same keys (when the keys exist). This
      * class does validation checks for each type of data supplied by the form.
-     * 
+     *
      * @param array $existingDbArr - data read from the database.
      * @param array $formInputArr - data supplied by the form.
      */
     function __construct($existingDbArr, $formInputArr) {
-        
+
         $this->dbArr = $existingDbArr;
         $this->formInArr = $formInputArr;
         $this->parse_inputs();
@@ -805,14 +970,14 @@ class Yfp_Spam_Form_Validator
     /**
      * Messages generated during parsing. May be empty if no changes were made
      * and no errors were encountered.
-     * 
+     *
      * @return array - list of string messages, if any.
      */
     public function get_messages() {
 
         return $this->messages;
     }
-    
+
     /**
      * The sanitized data array. Creating this is the purpose of this class.
      * @return array
@@ -827,7 +992,7 @@ class Yfp_Spam_Form_Validator
      * @return string
      */
     public function get_settings_error_type() {
-        
+
         return $this->typeAddSettingsError;
     }
 }
